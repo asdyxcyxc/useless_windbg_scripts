@@ -1,0 +1,146 @@
+************************************************************************************
+* find_basic_blocks.wds
+* 		Takes one argument, the module name to disassemble.  Designed to perform 
+* recursive decent with the exported functions for finding all possible basic 
+* blocks that can be called from the various entry points.  This does not make any 
+* attempts to resolve dynamic calls.
+*
+* 		This is an extremely inefficient script and should not be relied on for 
+* complete list of basic blocks.  Additionally, it will take an unrealistic amount
+* of time to cover any self respecting DLL.  This was written while learning
+* how to use WinDbg in an attempt to familiarize myself with all of the nuances
+* of the debugger.
+*
+************************************************************************************
+* Usage:
+* $$>a<find_basic_blocks.wds [name of module to disassemble]
+* Ex. $$>a<find_basic_blocks.wds mso
+************************************************************************************
+
+.block
+{
+	.if (${/d:$arg1} == 0)
+	{
+		.echo Please provide a module to disassemble.
+	} 
+	.else
+	{	
+		bc * 
+		
+		.block
+		{
+			as /c ${/v:error} x /f /q /1 ${$arg1}!*
+			.block { ad /q ${/v:error} }
+		}
+		
+		.block 
+		{
+			.foreach ( export {x /f /q /1 ${$arg1}!*})
+			{
+				as /c ${/v:error} bp ${export}
+				.block { ad /q ${/v:error} }
+			}
+			
+			r $t0 = 1
+			r $t1 = 0
+			.while ($t0 > $t1)
+			{
+				.echo Searching...
+				r $t1 = $t0
+				r $t0 = 0
+				.foreach ( breakpoint {bl})
+				{
+					.if ( $spat("${breakpoint}", "${$arg1}!*") == 1 )
+					{
+						r $t0 = $t0 + 1
+						.if ( $t0 < $t1 )
+						{
+							.continue
+						}
+						
+						.foreach ( function {uf /c ${breakpoint}})
+						{	
+							.if ($spat("${function}", "unresolvable"))
+							{
+								r $t2 = -1
+							} 
+							.elsif ($spat(@"${function}", "call") != 0) 
+							{
+								r $t2 = $t2 + 1
+							} 
+							.elsif ($spat("${function}", "${$arg1}!*") == 1 & $t2 == 1) 
+							{
+								r $t2 = 0
+								as /c ${/v:error} bp ${function}
+								.block { ad /q ${/v:error} }							
+							}
+							.elsif ($spat("${function}", "*!*") == 1)
+							{
+								r $t2 = 0
+							}
+						}
+					}
+				}
+				.printf "Total Functions Processed: %p\n", $t0
+			}
+			
+			.echo All Functions Processed...
+			.printf "Total Functions = %p\n", $t1
+			.echo Finding Basic Blocks...
+
+			r $t0 = 0
+			r $t2 = 0
+			r $t3 = 0
+			.foreach ( function {bl} )
+			{ 
+				.if ( $spat("${function}", "${$arg1}!*") == 1 )
+				{
+					r $t0 = $t0 + 1
+					r $t3 = $t0 * 44
+					r $t3 = $t3 / $t1
+					
+					.if ( $t3 > $t2 )
+					{
+						r $t2 = $t3
+						.printf "Percentage Complete: %p\n", $t2
+					}
+					
+					.foreach ( block {uf ${function}} ) 
+					{
+						.if ( $spat("${block}", "${$arg1}!*:") == 1 ) 
+						{ 
+							.foreach ( output {.shell -ci ".echo ${block}" @echo off && for /F "delims=:" %x in ("${block}") do echo %x}) 
+							{
+								.if ( $spat("${output}", "${$arg1}!*") == 1 ) 
+								{ 
+									as /c ${/v:error} bp ${output}
+									.block { ad /q ${/v:error} }
+								} 
+							} 
+						}
+					}
+				}
+			}
+			
+			.echo Logging Blocks Found...
+			
+			r $t0 = 0
+			.logopen C:\${$arg1}_basic_blocks.log
+			.foreach ( block {bl} )
+			{
+				.if ( $spat("${block}", "${$arg1}!*") == 1 )
+				{
+					r $t0 = $t0 + 1
+					.echo ${block}
+				}
+			}
+			.logclose
+			
+			ad *
+			bc *
+			
+			.printf "Total Blocks Logged: %p\n", $t0
+			.echo Trace located at C:\${$arg1}_basic_blocks.log
+		}
+	}
+}
