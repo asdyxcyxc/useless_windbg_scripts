@@ -1,0 +1,1 @@
+.shell -ci ".echo " cd C:\Users\admin\Desktop\ && radamsa-0.3.exe base.jpeg -o fuzzed.jpeg

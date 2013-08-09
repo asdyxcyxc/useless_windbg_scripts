@@ -1,0 +1,46 @@
+* Iterates through all of the loaded executable modules 
+* in the debugged process, then enumerates every 
+* function that it has a symbol for, in most cases this 
+* will only be the exported functions of the module.
+* 
+* Set a breakpoint on each of these functions to log when 
+* the function is hit and who called it.
+* 
+* As it is, by itself, this is not a very good script, 
+* too slow to run, and slows execution down to much while 
+* logging, but when using this as a template when working 
+* with a specific process, you can adjust the blacklist 
+* such that a reasonable number of functions are being 
+* tracked.  Additionally, you can add/remove/modify the 
+* commands do behave slightly differently, such as changing 
+* the breakpoint to a one-shot breakpoint.
+
+
+ad *
+bc *
+
+aS ${/v:blacklist} " "
+
+.block
+{
+	.foreach ( module {lm o 1m sm})
+	{
+		.if ( $spat(" ${blacklist} ", "* ${module} *") == 1 )
+		{
+			.continue
+		}
+		
+		.foreach ( location {x /f /1 ${module}!*})
+		{
+			.if ( $spat(@"${location}", "${module}!*") == 1 )
+			{
+				.echo ${location}
+				
+				as /c ${/v:error} bp ${location} ".printf \"${location} called from \"; .foreach ( word {k 2}) { aS ${/v:source} \"${word}\"; }; .block { .printf \"${source}\" }; .echo ; .block { ad /q ${/v:source} }; g"
+				.block { ad /q ${/v:error} }
+			}
+		}
+	}
+}
+
+ad /q ${/v:blacklist}
